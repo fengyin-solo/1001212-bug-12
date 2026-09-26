@@ -28,6 +28,12 @@ class EntryPayload(BaseModel):
     remark: str | None = None
 
 
+class BatchPayload(BaseModel):
+    """批量操作时提交的条目集合，每条独立校验、独立落库。"""
+
+    items: list[dict[str, Any]] = Field(default_factory=list)
+
+
 
 class FleetEntry(BaseModel):
     """冷链车明细结构。"""

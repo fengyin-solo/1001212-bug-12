@@ -1,6 +1,10 @@
 """内存数据仓库：给每个业务模块准备一份可筛选、可流转的示例数据。
 
 真实项目里这里会换成数据库访问层；当前实现只依赖标准库，保证克隆下来就能起。
+
+门到门配送这类需要分段存放的模块，用「模块#阶段」作为子表名登记
+（如 door#待配送、door#配送中、door#已签收），查询与概览统计时再归并回
+主模块，保证各模块看板口径不变。
 """
 from __future__ import annotations
 
@@ -15,22 +19,39 @@ class Store:
             name: [dict(row) for row in rows] for name, rows in SEED_ROWS.items()
         }
 
+    @staticmethod
+    def _base(name: str) -> str:
+        """子表名归并到主模块：door#待配送 -> door。"""
+        return name.split("#", 1)[0]
+
     def module_names(self) -> list[str]:
-        return sorted(self._tables)
+        return sorted({self._base(name) for name in self._tables})
 
     def rows(self, module: str) -> list[dict[str, Any]]:
         return self._tables.setdefault(module, [])
 
+    def stage_rows(self, module: str, stage: str) -> list[dict[str, Any]]:
+        """按阶段拆开的子表：不同阶段的记录物理上分开存放，互不串写。"""
+        return self._tables.setdefault(f"{module}#{stage}", [])
+
     def find(self, module: str, entry_id: int) -> dict[str, Any] | None:
-        for row in self.rows(module):
-            if int(row.get("id", 0)) == entry_id:
-                return row
+        for name, rows in self._tables.items():
+            if self._base(name) != module:
+                continue
+            for row in rows:
+                if int(row.get("id", 0)) == entry_id:
+                    return row
         return None
 
     def overview(self) -> dict[str, object]:
         modules: list[dict[str, object]] = []
         for name in self.module_names():
-            rows = self.rows(name)
+            rows = [
+                row
+                for table, entries in self._tables.items()
+                if self._base(table) == name
+                for row in entries
+            ]
             modules.append({
                 "name": name,
                 "created": len(rows),
